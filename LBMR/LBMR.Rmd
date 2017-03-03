@@ -7,10 +7,8 @@ output: pdf_document
 
 # Overview
 
-Provide an overview of what the module does / how to use the module.
+LBMR does not have growth and mortality events. These events have been separated from this module. The orignal growth and mortality events have been written in LBMR_GMOrig module. An additional LBMR_GMCS module has the climate sensitivity to the growth and mortality curves.
 
-Module documentation should be written so that others can use your module.
-This is a template for module documentation, and should be changed to reflect your module.
 
 ## RMarkdown
 
@@ -36,22 +34,24 @@ outputDir <- file.path(dirname(tempdir()), "LBMR", "outputs")
 times <- list(start = 0, end = 10)
 parameters <- list(
   .globals = list(verbose = FALSE),
-  LBMR = list(.plotInitialTime = NA)
-  #.progress = list(type = "text", interval = 1), # for a progress bar
-  ## If there are further modules, each can have its own set of parameters:
-  #module1 = list(param1 = value1, param2 = value2),
-  #module2 = list(param1 = value1, param2 = value2)
+  LBMR = list()
 )
-modules <- list("LBMR")
+# to call the original GM functions
+modulesOrig <- list("LBMR", "LBMR_GMOrig")
+
+# to call the climate-sensitivity GM functions
+modulesCS <- list("LBMR", "LBMR_GMCS")
+
+
 objects <- list(successionTimestep = 2)
 paths <- list(
   cachePath = file.path(outputDir, "cache"),
-  modulePath = file.path("."),
+  modulePath = file.path("~/GitHub/LBMR_ClimateSensitive/"),
   inputPath = inputDir,
   outputPath = outputDir
 )
 
-mySim <- simInit(times = times, params = parameters, modules = modules,
+mySim <- simInit(times = times, params = parameters, modules = modulesOrig,
                  objects = objects, paths = paths)
 
 mySimOut <- spades(mySim, debug = TRUE)

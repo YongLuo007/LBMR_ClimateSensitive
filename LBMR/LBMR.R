@@ -17,7 +17,6 @@ defineModule(sim, list(
   reqdPkgs = list("raster", "sp", "data.table", "dplyr", "ggplot2",
                   "fpCompare", "grid", "archivist", "tidyr", "Rcpp", "scales"),
   parameters = rbind(
-    defineParameter("growthInitialTime", "numeric", 0, NA_real_, NA_real_, "Initial time for the growth event to occur"),
     defineParameter(".plotInitialTime", "numeric", 0, NA, NA, "This describes the simulation time at which the first plot event should occur"),
     defineParameter(".saveInitialTime", "numeric", 0, NA, NA, "This describes the simulation time at which the first plot event should occur"),
     defineParameter("fireDisturbanceInitialTime", "numeric", 1, NA_real_, NA_real_, "Initial time for the post fire reproduction event to occur")
@@ -103,8 +102,6 @@ doEvent.LBMR = function(sim, eventTime, eventType, debug = FALSE) {
       sim <- scheduleEvent(sim, start(sim) + 2*sim$successionTimestep - 1, "LBMR",
                            "cohortAgeReclassification", eventPriority = 0.5)
     }
-    sim <- scheduleEvent(sim, start(sim) + params(sim)$LBMR$growthInitialTime,
-                         "LBMR", "mortalityAndGrowth", eventPriority = 5)
     sim <- scheduleEvent(sim, start(sim) + sim$successionTimestep,
                          "LBMR", "summaryBGM", eventPriority = 6)
     if(!is.null(sim$rstCurrentBurn)){ # anything related to fire disturbance
@@ -129,10 +126,6 @@ doEvent.LBMR = function(sim, eventTime, eventType, debug = FALSE) {
                          "LBMR", "plot", eventPriority = 7)
     sim <- scheduleEvent(sim, params(sim)$LBMR$.saveInitialTime + sim$successionTimestep,
                          "LBMR", "save", eventPriority = 7.5)
-  } else if (eventType == "mortalityAndGrowth") {
-    sim <- LBMRMortalityAndGrowth(sim)
-    sim <- scheduleEvent(sim, time(sim) + 1, "LBMR", "mortalityAndGrowth", 
-                         eventPriority = 5)
   } else if (eventType == "summaryBGM"){
     sim <- LBMRSummaryBGM(sim)
     sim <- scheduleEvent(sim, time(sim) + sim$successionTimestep,
@@ -165,7 +158,7 @@ doEvent.LBMR = function(sim, eventTime, eventType, debug = FALSE) {
                          "LBMR", "summaryRegen", eventPriority = 5.5)
   } else if (eventType == "plot") {
     sim <- LBMRPlot(sim)
-    sim <- scheduleEvent(sim, time(sim) + pmin(sim$successionTimestep, sim$fireTimestep),
+    sim <- scheduleEvent(sim, time(sim) + sim$successionTimestep,
                          "LBMR", "plot", eventPriority = 7)
   } else if (eventType == "save") {
     sim <- LBMRSave(sim)
@@ -396,92 +389,7 @@ spinUp <- function(cohortData, calibrate, successionTimestep, spinupMortalityfra
   return(all)
 }
 ### template for your event1
-LBMRMortalityAndGrowth = function(sim) {
-  cohortData <- sim$cohortData
-  sim$cohortData <- cohortData[0,]
-  pixelGroups <- data.table(pixelGroupIndex = unique(cohortData$pixelGroup), 
-                            temID = 1:length(unique(cohortData$pixelGroup)))
-  cutpoints <- sort(unique(c(seq(1, max(pixelGroups$temID), by = 10^4), max(pixelGroups$temID))))
-  if(length(cutpoints) == 1){cutpoints <- c(cutpoints, cutpoints+1)}
-  pixelGroups[, groups:=cut(temID, breaks = cutpoints,
-                            labels = paste("Group", 1:(length(cutpoints)-1),
-                                           sep = ""),
-                            include.lowest = T)]
-  for(subgroup in paste("Group",  1:(length(cutpoints)-1), sep = "")){
-    subCohortData <- cohortData[pixelGroup %in% pixelGroups[groups == subgroup, ]$pixelGroupIndex, ]
-    #   cohortData <- sim$cohortData
-    set(subCohortData, ,"age", subCohortData$age + 1)
-    subCohortData <- updateSpeciesEcoregionAttributes(speciesEcoregion = sim$speciesEcoregion,
-                                                      time = round(time(sim)), cohortData = subCohortData)
-    subCohortData <- updateSpeciesAttributes(species = sim$species, cohortData = subCohortData)
-    
-    #   if(as.integer(time(sim)/sim$successionTimestep) == time(sim)/sim$successionTimestep){
-    #     cohortData <- 
-    #     cohortData <- cohortData[,.(pixelGroup, ecoregionGroup, species, speciesCode, age,
-    #                                 B, maxANPP, maxB,  establishprob, maxB_eco,longevity, mortalityshape,
-    #                                 growthcurve, sexualmature, shadetolerance,
-    #                                 mortality, prevMortality = 0, sumB = as.integer(0L), aNPPAct = 0)]
-    #   }
-    subCohortData <- calculateSumB(cohortData = subCohortData, 
-                                   lastReg = sim$lastReg, 
-                                   simuTime = time(sim),
-                                   successionTimestep = sim$successionTimestep)
-    subCohortData <- subCohortData[age <= longevity,]
-    subCohortData <- calculateAgeMortality(cohortData = subCohortData,
-                                           stage = "mainsimulation", 
-                                           spinupMortalityfraction = 0)
-    set(subCohortData, , c("longevity", "mortalityshape"), NULL)
-    subCohortData <- calculateCompetition(cohortData = subCohortData,
-                                          stage = "mainsimulation")
-    if(!sim$calibrate){
-      set(subCohortData, , "sumB", NULL)
-    }
-    #### the below two lines of codes are to calculate actual ANPP
-    subCohortData <- calculateANPP(cohortData = subCohortData, 
-                                   stage = "mainsimulation")
-    set(subCohortData, , "growthcurve", NULL)
-    set(subCohortData, ,"aNPPAct",
-        pmax(1, subCohortData$aNPPAct - subCohortData$mAge))
-    subCohortData <- calculateGrowthMortality(cohortData = subCohortData,
-                                              stage = "mainsimulation")
-    set(subCohortData, ,"mBio",
-        pmax(0, subCohortData$mBio - subCohortData$mAge))
-    set(subCohortData, ,"mBio",
-        pmin(subCohortData$mBio, subCohortData$aNPPAct))
-    set(subCohortData, ,"mortality",
-        subCohortData$mBio + subCohortData$mAge)
-    set(subCohortData, ,c("mBio", "mAge", "maxANPP",
-                          "maxB", "maxB_eco", "bAP", "bPM"),
-        NULL)
-    if(sim$calibrate){
-      set(subCohortData, ,"deltaB",
-          as.integer(subCohortData$aNPPAct - subCohortData$mortality))
-      set(subCohortData, ,"B",
-          subCohortData$B + subCohortData$deltaB)
-      tempcohortdata <- subCohortData[,.(pixelGroup, Year = time(sim), siteBiomass = sumB, speciesCode,
-                                         Age = age, iniBiomass = B - deltaB, ANPP = round(aNPPAct, 1),
-                                         Mortality = round(mortality,1), deltaB, finBiomass = B)]
-      
-      tempcohortdata <- setkey(tempcohortdata, speciesCode)[setkey(sim$species[,.(species, speciesCode)],
-                                                                   speciesCode),
-                                                            nomatch = 0][, ':='(speciesCode = species,
-                                                                                species = NULL,
-                                                                                pixelGroup = NULL)]
-      setnames(tempcohortdata, "speciesCode", "Species")
-      sim$simulationTreeOutput <- rbind(sim$simulationTreeOutput, tempcohortdata)
-      set(subCohortData, ,c("deltaB", "sumB"), NULL)
-    } else {
-      set(subCohortData, ,"B",
-          subCohortData$B + as.integer(subCohortData$aNPPAct - subCohortData$mortality))
-    }
-    sim$cohortData <- rbindlist(list(sim$cohortData, subCohortData))
-    rm(subCohortData)
-    gc()
-  }
-  rm(cohortData, cutpoints, pixelGroups)
-  gc()
-  return(invisible(sim))
-}
+
 
 LBMRSummaryBGM = function(sim) {
   pixelGroups <- data.table(pixelGroupIndex = unique(sim$cohortData$pixelGroup), 
@@ -979,9 +887,11 @@ LBMRSummaryRegen = function(sim){
 }
 
 LBMRPlot = function(sim) {
-  # if(time(sim) == sim$successionTimestep){
-  #   clearPlot()
-  # }
+   if(time(sim) == sim$successionTimestep){
+     dev(4)
+
+   }
+  clearPlot()
   Plot(sim$biomassMap, sim$ANPPMap, sim$mortalityMap, sim$reproductionMap, 
        title = c("Biomass", "ANPP", "mortality", "reproduction"), new = TRUE, speedup = 1)
   grid.rect(0.93, 0.97, width = 0.2, height = 0.06, gp = gpar(fill = "white", col = "white"))
