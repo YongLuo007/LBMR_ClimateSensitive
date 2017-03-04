@@ -1,0 +1,100 @@
+---
+title: "LBMR_GMCS"
+author: ""
+date: "03 March 2017"
+output: pdf_document
+---
+
+# Overview
+
+This module is to provide growth and mortality functions that sensitive to climate moisture index anomaly (a proxy index of climate change-associated water availability).
+
+The module provides two algorithms: 1) growth and mortality responses to climate moisture index anomaly without depending on spatial availability (i.e., spatial drought gradient); 2) growth and mortality response to climate moisture index anomaly depending on spatial water availibity.
+The first algorithm is using the results from Chen & Luo 2016 Ecology Letter paper;
+The second algroritm is using the equations that Luo, Chen and McIntire's recent paper.
+
+For both algorithms, the sensitivities of growth and mortality vary with stand age (ie., time since fire).
+
+## R Markdown
+
+R Markdown syntax allows R code, outputs, and figures to be rendered in the documentation.
+
+For help writing in R Markdown, see http://rmarkdown.rstudio.com/.
+
+# Usage
+
+```{r module_usage}
+# library(igraph)
+# library(SpaDES)
+# 
+# moduleDir <- file.path("C:/Users/yonluo/Documents/GitHub/LBMR_ClimateSensitive")
+# inputDir <- file.path(moduleDir, "inputs") %>% checkPath(create = TRUE)
+# outputDir <- file.path(moduleDir, "outputs")
+# cacheDir <- file.path(outputDir, "cache")
+# times <- list(start = 0, end = 10)
+# parameters <- list(
+#   #.progress = list(type = "text", interval = 1), # for a progress bar
+#   ## If there are further modules, each can have its own set of parameters:
+#   #module1 = list(param1 = value1, param2 = value2),
+#   #module2 = list(param1 = value1, param2 = value2)
+# )
+# modules <- list("LBMR_GMCS")
+# objects <- list()
+# paths <- list(
+#   cachePath = cacheDir,
+#   modulePath = moduleDir,
+#   inputPath = inputDir,
+#   outputPath = outputDir
+# )
+# 
+# mySim <- simInit(times = times, params = parameters, modules = modules,
+#                  objects = objects, paths = paths)
+# 
+# spades(mySim)
+```
+
+# Events
+
+1. Growth and Mortality responses to ACMIA (annual climate moisture index anomaly) without depending on spatial water availability (Chen, Luo 2016 Ecology Letters)
+Growth: (Mg per ha per cm)
+(ACMIA-0.935)*0.016+(log(SA)-4.40)*(ACMIA-0.934)*0.031
+Mortality: 
+(ACMIA-0.935)*0.028 # does not significantly depending on Stand age
+where 0.935 and 4.40 are the averages for Chen and Luo's dataset for ACMIA and log(SA).
+
+
+2. Growth and Mortality responses to ACMIA (annual climate moisture index anomaly) depending on spatial water availability (Luo, Chen, McIntire recent paper)
+Growth:
+(ACMIA-0.935)*0.018+(SpCMI-8.043)*(-0.015)+(log(SA)-4.40)*(ACMIA-0.935)*0.039+(ACMIA-0.934)*(SpCMI-8.043)*(-0.002)
+Mortality: 
+(ACMIA-0.935)*0.027+ (SpCMI-8.043)*(0.049)+(ACMIA-0.934)*(SpCMI-8.043)*(-0.002)
+# does not significantly depending on Stand age
+where 0.935, 4.40 and 8.043 are the averages for Chen and Luo's dataset for ACMIA, log(SA) and SpCMI, respectively.
+
+
+
+
+
+## Plotting
+
+Write what is plotted.
+
+## Saving
+
+Write what is saved.
+
+# Data dependencies
+
+## Input data
+
+How to obtain input data, and a description of the data required by the module.
+If `sourceURL` is specified, `downloadData("LBMR_GMCS", "path/to/modules/dir")` may be sufficient.
+
+## Output data
+
+Description of the module outputs.
+
+# Links to other modules
+
+Describe any anticipated linkages to other modules.
+
