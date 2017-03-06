@@ -3,9 +3,9 @@
 # are put into the simList. To use objects and functions, use sim$xxx.
 defineModule(sim, list(
   name = "LBMR_GMCS",
-  description = "insert module description here",
-  keywords = c("insert key words here"),
-  authors = person("First", "Last", email = "first.last@example.com", role = c("aut", "cre")),
+  description = "The module provides two algorithms to calculate growth and mortality changes in response to deltaCMI ",
+  keywords = c("deltaCMI", "Growth", "Motatlity", "Climate sensitivity"),
+  authors = person("Yong", "Luo", email = "yong.luo@canada.ca", role = c("aut", "cre")),
   childModules = character(0),
   version = numeric_version("1.3.1.9035"),
   spatialExtent = raster::extent(rep(NA_real_, 4)),
@@ -42,13 +42,16 @@ defineModule(sim, list(
     expectsInput(objectName = "calibrate", objectClass = "logical",
                  desc = "whether the model has detailed outputs", sourceURL = NA),
     expectsInput(objectName = "rstTimeSinceFire", objectClass = "rasterlayer",
-                 desc = "this is stand age map", sourceURL = NA),
+                 desc = "this is stand age map, is not provided, a stand age map will be generated using maximum age of cohort data", sourceURL = NA),
     expectsInput(objectName = "CMIAnomalyMap", objectClass = "rasterlayer",
                  desc = "anomaly of climate moisture index for given year, this is also the CMIMap-CMInormalMap", sourceURL = NA),
     expectsInput(objectName = "CMINormalMap", objectClass = "rasterlayer",
                  desc = "mean climate moisture index between 1950 and 2010", sourceURL = NA),
     expectsInput(objectName = "CMIMap", objectClass = "rasterlayer",
-                 desc = "observed climate moisture index map for a given year", sourceURL = NA)
+                 desc = "observed climate moisture index map for a given year", sourceURL = NA),
+    expectsInput(objectName = "nonSpatial", objectClass = "logical",
+                 desc = "to define whether the climate sensitivity is dependent on spatial CMI",
+                 sourceURL = NA)
   ),
   outputObjects = bind_rows(
     #createsOutput("objectName", "objectClass", "output object description", ...),
@@ -88,7 +91,7 @@ LBMR_GMCSInit <- function(sim) {
   if(is.null(sim$CMIAnomalyMap)){
     sim$CMIAnomalyMap <- sim$CMIMap-sim$CMINormalMap
   }
-
+  
   return(invisible(sim))
 }
 
@@ -104,37 +107,53 @@ LBMR_GMCSMortalityAndGrowth <- function(sim) {
                             labels = paste("Group", 1:(length(cutpoints)-1),
                                            sep = ""),
                             include.lowest = T)]
-  if(sim$SpatialDependency){
-    adjustFactor <- 10^6/10000
+  if(is.null(sim$rstTimeSinceFire)){
+    pixelGroupMap <- sim$pixelGroupMap
+    names(pixelGroupMap) <- "pixelGroup"
+    pixelAll <- cohortData[,.(SA = max(age)), by=pixelGroup]
+    sim$rstTimeSinceFire <- rasterizeReduced(pixelAll, pixelGroupMap, "SA")
+    norstTimeSinceFireProvided <- TRUE
+  } else {
+    pixelGroupMap <- sim$pixelGroupMap
+    norstTimeSinceFireProvided <- FALSE
+  }
+  
+  Mgha_To_gm2 <- 10^6/10000
+  if(!sim$nonSpatial){
     # the original unit for change is Mg per ha, need to be adjust to LBMR level (g per m2)
     CMIEffectTable <- data.table(pixelIndex = 1:ncell(sim$pixelGroupMap),
-                             pixelGroup = getValues(sim$pixelGroupMap),
-                             SpaCMI = round(getValues(sim$CMINormalMap), 2),
-                             SA = round(getValues(sim$rstTimeSinceFire)),
-                             CMIAnomaly = round(getValues(sim$CMIAnomalyMap), 2))
-    CMIEffectTable[, ':='(growthChange = adjustFactor*(CMIAnomaly-0.935)*0.018+(SpaCMI-8.043)*(-0.015)+
-                        (log(SA)-4.40)*(CMIAnomaly - 0.935)*0.039+
-                        (CMIAnomaly - 0.935)*(SpaCMI - 8.043)*(-0.002),
-                      mortalityChange = adjustFactor*(CMIAnomaly - 0.935)*(-0.027)+(SpaCMI-8.043)*(-0.049)+
-                        (CMIAnomaly - 0.935)*(SpaCMI - 8.043)*(0.002))]
+                                 pixelGroup = getValues(sim$pixelGroupMap),
+                                 SpaCMI = round(getValues(sim$CMINormalMap), 2),
+                                 SA = round(getValues(sim$rstTimeSinceFire)),
+                                 CMIAnomaly = round(getValues(sim$CMIAnomalyMap), 2))
+    CMIEffectTable[, ':='(growthChange = Mgha_To_gm2*(CMIAnomaly-0.935)*0.018+(SpaCMI-8.043)*(-0.015)+
+                            (log(SA)-4.40)*(CMIAnomaly - 0.935)*0.039+
+                            (CMIAnomaly - 0.935)*(SpaCMI - 8.043)*(-0.002),
+                          mortalityChange = Mgha_To_gm2*(CMIAnomaly - 0.935)*(-0.027)+(SpaCMI-8.043)*(-0.049)+
+                            (CMIAnomaly - 0.935)*(SpaCMI - 8.043)*(0.002))]
     
     CMIEffectTable <- CMIEffectTable[,.(pixelIndex, pixelGroup, CCScenario = paste(SpaCMI,"_", SA, "_", CMIAnomaly, sep = ""), 
                                         growthChange, mortalityChange)]
     CMIEffectTable[, CCScenario := as.numeric(as.factor(CCScenario))]
+    if(norstTimeSinceFireProvided){
+      sim$rstTimeSinceFire <- NULL
+    }
   } else {
-    adjustFactor <- 10^6/10000
     CMIEffectTable <- data.table(pixelIndex = 1:ncell(sim$pixelGroupMap),
-                             pixelGroup = getValues(sim$pixelGroupMap),
-                             SA = round(getValues(sim$rstTimeSinceFire)),
-                             CMIAnomaly = round(getValues(sim$CMIAnomalyMap), 2))
-    CMIEffectTable[, ':='(growthChange = adjustFactor*(CMIAnomaly-0.935)*0.016+
-                        (log(SA)-4.40)*(CMIAnomaly - 0.935)*0.031,
-                      mortalityChange = adjustFactor*(CMIAnomaly - 0.935)*(-0.028))]
+                                 pixelGroup = getValues(sim$pixelGroupMap),
+                                 SA = round(getValues(sim$rstTimeSinceFire)),
+                                 CMIAnomaly = round(getValues(sim$CMIAnomalyMap), 2))
+    CMIEffectTable[, ':='(growthChange = Mgha_To_gm2*(CMIAnomaly-0.935)*0.016+
+                            (log(SA)-4.40)*(CMIAnomaly - 0.935)*0.031,
+                          mortalityChange = Mgha_To_gm2*(CMIAnomaly - 0.935)*(-0.028))]
     CMIEffectTable <- CMIEffectTable[,.(pixelIndex, pixelGroup, CCScenario = paste(SA, "_", CMIAnomaly, sep = ""), 
                                         growthChange, mortalityChange)]
     CMIEffectTable[, CCScenario := as.numeric(as.factor(CCScenario))]
+    if(norstTimeSinceFireProvided){
+      sim$rstTimeSinceFire <- NULL
+    }
   }
-  pixelGroupMap <- sim$pixelGroupMap
+  
   for(subgroup in paste("Group",  1:(length(cutpoints)-1), sep = "")){
     subCohortData <- cohortData[pixelGroup %in% pixelGroups[groups == subgroup, ]$pixelGroupIndex, ]
     #   cohortData <- sim$cohortData
@@ -228,7 +247,7 @@ LBMR_GMCSMortalityAndGrowth <- function(sim) {
 
 .inputObjects = function(sim) {
   
-  sim$SpatialDependency <- FALSE
+  sim$nonSpatial <- TRUE
   return(invisible(sim))
 }
 
